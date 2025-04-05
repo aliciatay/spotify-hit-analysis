@@ -29,13 +29,22 @@ selected_features = audio_features + audio_analysis
 hit_songs = df[df['hit_count'] >= 5].copy()
 
 # Select only the features we want to visualize
-visualization_data = hit_songs[selected_features + ['hit_count', 'track_name', 'artists']]
+visualization_data = hit_songs[selected_features + ['hit_count', 'track_name', 'artists', 'popularity']]
 
 # Normalize the data
 for feature in selected_features:
     min_val = visualization_data[feature].min()
     max_val = visualization_data[feature].max()
     visualization_data[feature] = (visualization_data[feature] - min_val) / (max_val - min_val)
+
+# Store original ranges for reference
+feature_ranges = {
+    feature: {
+        'min': float(hit_songs[feature].min()),
+        'max': float(hit_songs[feature].max())
+    }
+    for feature in selected_features
+}
 
 # Convert to JSON format
 output_data = []
@@ -44,10 +53,17 @@ for _, row in visualization_data.iterrows():
         'track_name': row['track_name'],
         'artists': row['artists'],
         'hit_count': int(row['hit_count']),
+        'popularity': int(row['popularity']),
         'features': {feature: float(row[feature]) for feature in selected_features}
     }
     output_data.append(song_data)
 
+# Create the final output with both data and metadata
+final_output = {
+    'songs': output_data,
+    'feature_ranges': feature_ranges
+}
+
 # Save to JSON file
 with open('processed_data.json', 'w') as f:
-    json.dump(output_data, f) 
+    json.dump(final_output, f) 
