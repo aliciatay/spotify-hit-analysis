@@ -23,6 +23,7 @@ h1 {
     height: 600px;
     margin-bottom: 20px;
     overflow: visible;
+    margin-top: 50px;  /* Add space for rotated labels */
 }
 
 .dimension {
@@ -39,6 +40,11 @@ h1 {
 .axis text {
     text-shadow: 0 1px 0 #fff;
     cursor: move;
+    font-size: 10px;
+}
+
+.axis text:not(:first-child) {
+    transform-origin: 0 50%;
 }
 
 .axis.active {

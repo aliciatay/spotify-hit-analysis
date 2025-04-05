@@ -89,8 +89,10 @@ d3.json("processed_data.json").then(function(response) {
             d3.select(this).call(d3.axisLeft(y[d])); 
         })
         .append("text")
-        .style("text-anchor", "middle")
         .attr("y", -9)
+        .attr("x", 0)
+        .style("text-anchor", "end")
+        .attr("transform", "rotate(-70)")
         .text(d => d)
         .style("fill", "black");
 
