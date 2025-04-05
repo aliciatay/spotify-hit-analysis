@@ -2,22 +2,20 @@ body {
     font-family: Arial, sans-serif;
     margin: 0;
     padding: 20px;
-    background-color: #f5f5f5;
+    background-color: #fff;
 }
 
 .container {
     max-width: 1300px;
     margin: 0 auto;
-    background-color: white;
     padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 h1 {
     color: #333;
     text-align: center;
     margin-bottom: 30px;
+    font-weight: 300;
 }
 
 #visualization {
@@ -27,66 +25,58 @@ h1 {
     overflow: visible;
 }
 
-.legend {
-    margin-top: 20px;
-    padding: 15px;
-    background-color: #f8f8f8;
-    border-radius: 4px;
+.axis {
+    cursor: move;
 }
 
 .axis line,
 .axis path {
-    stroke: #ccc;
-    stroke-width: 1px;
+    stroke: #ddd;
 }
 
 .axis text {
-    font-size: 10px;
     fill: #666;
+    font-size: 10px;
+}
+
+.axis.active {
+    stroke: #000;
+    stroke-width: 2px;
 }
 
 .line {
     fill: none;
-    stroke-width: 1.5;
-    opacity: 0.5;
-    transition: opacity 0.2s, stroke-width 0.2s;
+    stroke-width: 1;
+    transition: opacity 0.2s;
 }
 
 .line:hover {
-    stroke-width: 2.5;
-    opacity: 1;
-    z-index: 1;
+    stroke-width: 2;
 }
 
-.line.selected {
-    opacity: 1;
-}
-
-.line.not-selected {
-    opacity: 0.1;
-}
-
-.brush .extent {
-    fill: #4682b4;
-    fill-opacity: 0.1;
-    stroke: #4682b4;
-    stroke-opacity: 0.5;
+.brush .selection {
+    fill: #eee;
+    fill-opacity: 0.2;
+    stroke: #666;
+    stroke-opacity: 0.4;
+    stroke-width: 1px;
 }
 
 .tooltip {
     position: absolute;
-    background-color: white;
-    padding: 10px;
+    background-color: rgba(255, 255, 255, 0.95);
+    padding: 8px 12px;
     border: 1px solid #ddd;
-    border-radius: 5px;
+    border-radius: 4px;
     pointer-events: none;
     font-size: 12px;
     z-index: 1000;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     max-width: 300px;
+    line-height: 1.4;
 }
 
 .legend text {
     font-size: 12px;
-    fill: #333;
+    fill: #666;
 } 

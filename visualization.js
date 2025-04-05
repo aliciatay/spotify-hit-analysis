@@ -22,7 +22,7 @@ d3.json("processed_data.json").then(function(response) {
     const featureRanges = response.feature_ranges;
     
     // Extract feature names
-    const features = Object.keys(data[0].features);
+    let features = Object.keys(data[0].features);
     
     // Create scales for each feature
     const scales = {};
@@ -32,95 +32,162 @@ d3.json("processed_data.json").then(function(response) {
             .range([height, 0]);
     });
 
-    // Create the parallel coordinates
-    const line = d3.line()
-        .x(d => d.x)
-        .y(d => d.y);
+    // Create position scale for axes
+    let xScale = d3.scalePoint()
+        .domain(features)
+        .range([0, width]);
 
-    // Create axes
-    const axes = svg.selectAll(".axis")
-        .data(features)
-        .enter()
-        .append("g")
-        .attr("class", "axis")
-        .attr("transform", (d, i) => `translate(${i * (width / (features.length - 1))},0)`);
+    // Function to render the parallel coordinates
+    function render(features) {
+        // Update position scale
+        xScale.domain(features);
 
-    // Add axes lines
-    axes.append("line")
-        .attr("x1", 0)
-        .attr("y1", 0)
-        .attr("x2", 0)
-        .attr("y2", height);
+        // Create the parallel coordinates line generator
+        const line = d3.line()
+            .defined(([, value]) => value != null)
+            .x(([key]) => xScale(key))
+            .y(([, value]) => scales[key](value));
 
-    // Add axes labels with ranges
-    axes.append("text")
-        .attr("x", 0)
-        .attr("y", -10)
-        .attr("text-anchor", "middle")
-        .attr("transform", "rotate(-45)")
-        .style("font-size", "10px")
-        .each(function(d) {
-            const range = featureRanges[d];
-            d3.select(this).text(`${d}\n[${range.min.toFixed(2)}-${range.max.toFixed(2)}]`);
+        // Update axes
+        const axes = svg.selectAll(".axis")
+            .data(features, d => d);
+
+        // Remove old axes
+        axes.exit().remove();
+
+        // Add new axes
+        const axesEnter = axes.enter()
+            .append("g")
+            .attr("class", "axis")
+            .call(drag);
+
+        // Update all axes
+        axes.merge(axesEnter)
+            .attr("transform", d => `translate(${xScale(d)},0)`)
+            .each(function(d) {
+                d3.select(this).call(d3.axisLeft(scales[d]));
+            });
+
+        // Add axes labels
+        axesEnter.append("text")
+            .attr("y", -9)
+            .attr("text-anchor", "middle")
+            .style("font-size", "10px")
+            .text(d => `${d}\n[${featureRanges[d].min.toFixed(2)}-${featureRanges[d].max.toFixed(2)}]`);
+
+        // Update lines
+        const paths = svg.selectAll(".line")
+            .data(data);
+
+        // Add new lines
+        const pathsEnter = paths.enter()
+            .append("path")
+            .attr("class", "line")
+            .style("stroke", d => colorScale(d.popularity))
+            .style("opacity", 0.3);
+
+        // Update all lines
+        paths.merge(pathsEnter)
+            .attr("d", d => line(features.map(key => [key, d.features[key]])));
+
+        // Add brushes
+        const brushes = {};
+        features.forEach(feature => {
+            const brush = d3.brushY()
+                .extent([[xScale(feature) - 10, 0], [xScale(feature) + 10, height]])
+                .on("start brush end", brushed);
+
+            const axisGroup = svg.select(`.axis:nth-child(${features.indexOf(feature) + 1})`);
+            axisGroup.call(brush);
+            brushes[feature] = brush;
         });
 
-    // Add the lines
-    const lines = svg.selectAll(".line")
-        .data(data)
-        .enter()
-        .append("path")
-        .attr("class", "line")
-        .style("stroke", d => colorScale(d.popularity))
-        .style("stroke-width", 1.5)
-        .attr("d", d => {
-            const points = features.map((feature, i) => ({
-                x: i * (width / (features.length - 1)),
-                y: scales[feature](d.features[feature])
-            }));
-            return line(points);
+        // Add tooltips
+        paths.merge(pathsEnter)
+            .on("mouseover", function(event, d) {
+                d3.select(this)
+                    .style("stroke-width", 2)
+                    .style("opacity", 1)
+                    .raise();
+
+                const tooltip = d3.select("body")
+                    .append("div")
+                    .attr("class", "tooltip");
+
+                tooltip.html(`
+                    <strong>${d.track_name}</strong><br>
+                    Artist: ${d.artists}<br>
+                    Popularity: ${d.popularity}<br>
+                    Hit Count: ${d.hit_count}<br>
+                    ${Object.entries(d.features)
+                        .map(([key, value]) => `${key}: ${value.toFixed(3)}`)
+                        .join("<br>")}
+                `)
+                .style("left", (event.pageX + 10) + "px")
+                .style("top", (event.pageY - 28) + "px");
+            })
+            .on("mouseout", function() {
+                d3.select(this)
+                    .style("stroke-width", 1)
+                    .style("opacity", 0.3);
+                d3.selectAll(".tooltip").remove();
+            });
+
+        // Brushing function
+        function brushed(event) {
+            if (event.selection === null) return;
+            const feature = features[d3.select(this).datum()];
+            const [y0, y1] = event.selection;
+
+            svg.selectAll(".line")
+                .style("opacity", d => {
+                    const value = scales[feature](d.features[feature]);
+                    return value >= y0 && value <= y1 ? 0.7 : 0.1;
+                });
+        }
+    }
+
+    // Drag behavior for axes
+    const drag = d3.drag()
+        .subject(function() {
+            const t = d3.select(this);
+            return {
+                x: t.attr("transform").match(/translate\(([^,]+)/)[1]
+            };
+        })
+        .on("start", function(event) {
+            d3.select(this).raise().classed("active", true);
+        })
+        .on("drag", function(event, d) {
+            // Get the current position
+            const xPos = event.x;
+            
+            // Find the closest position in the domain
+            const domain = features.slice();
+            const range = domain.map(key => xScale(key));
+            const i = d3.bisectLeft(range, xPos);
+            
+            if (i > 0 && i < domain.length) {
+                // Swap the positions
+                const oldIndex = domain.indexOf(d);
+                const newIndex = i > oldIndex ? i - 1 : i;
+                domain.splice(oldIndex, 1);
+                domain.splice(newIndex, 0, d);
+                features = domain;
+                render(features);
+            }
+        })
+        .on("end", function() {
+            d3.select(this).classed("active", false);
         });
 
-    // Add tooltips
-    lines.on("mouseover", function(event, d) {
-        d3.select(this)
-            .style("stroke-width", 3)
-            .style("opacity", 1);
-
-        // Show tooltip
-        const tooltip = d3.select("body")
-            .append("div")
-            .attr("class", "tooltip")
-            .style("position", "absolute")
-            .style("background-color", "white")
-            .style("padding", "10px")
-            .style("border", "1px solid #ddd")
-            .style("border-radius", "5px")
-            .style("pointer-events", "none");
-
-        tooltip.html(`
-            <strong>${d.track_name}</strong><br>
-            Artist: ${d.artists}<br>
-            Popularity: ${d.popularity}<br>
-            Hit Count: ${d.hit_count}<br>
-            ${Object.entries(d.features)
-                .map(([key, value]) => `${key}: ${value.toFixed(3)}`)
-                .join("<br>")}
-        `)
-        .style("left", (event.pageX + 10) + "px")
-        .style("top", (event.pageY - 28) + "px");
-    })
-    .on("mouseout", function() {
-        d3.select(this)
-            .style("stroke-width", 1.5)
-            .style("opacity", 0.7);
-        d3.selectAll(".tooltip").remove();
-    });
+    // Initial render
+    render(features);
 
     // Add color legend
     const legendWidth = 20;
     const legendHeight = height / 2;
     
-    // Create legend gradient
     const defs = svg.append("defs");
     const gradient = defs.append("linearGradient")
         .attr("id", "popularity-gradient")
@@ -129,7 +196,6 @@ d3.json("processed_data.json").then(function(response) {
         .attr("x2", "0%")
         .attr("y2", "0%");
 
-    // Add gradient stops
     gradient.append("stop")
         .attr("offset", "0%")
         .attr("stop-color", colorScale(0));
@@ -142,7 +208,6 @@ d3.json("processed_data.json").then(function(response) {
         .attr("offset", "100%")
         .attr("stop-color", colorScale(100));
 
-    // Add legend rectangle
     const legend = svg.append("g")
         .attr("class", "legend")
         .attr("transform", `translate(${width + margin.right/2}, ${height/4})`);
@@ -152,7 +217,6 @@ d3.json("processed_data.json").then(function(response) {
         .attr("height", legendHeight)
         .style("fill", "url(#popularity-gradient)");
 
-    // Add legend axis
     const legendScale = d3.scaleLinear()
         .domain([0, 100])
         .range([legendHeight, 0]);
@@ -168,28 +232,4 @@ d3.json("processed_data.json").then(function(response) {
         .attr("transform", `translate(${legendWidth + 30}, ${-10})`)
         .style("text-anchor", "middle")
         .text("Popularity");
-
-    // Add brush functionality
-    axes.each(function(d) {
-        const axis = d3.select(this);
-        const brush = d3.brushY()
-            .extent([[-10, 0], [10, height]])
-            .on("brush", brushed);
-
-        axis.append("g")
-            .attr("class", "brush")
-            .call(brush);
-    });
-
-    function brushed(event) {
-        if (!event.selection) return;
-
-        const [y0, y1] = event.selection;
-        const feature = features[event.target.parentNode.__data__];
-
-        lines.classed("selected", function(d) {
-            const value = scales[feature](d.features[feature]);
-            return value >= y0 && value <= y1;
-        });
-    }
 }); 
