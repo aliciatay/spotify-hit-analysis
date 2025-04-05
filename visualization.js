@@ -1,7 +1,7 @@
 // Set the dimensions and margins of the visualization
 const margin = {top: 30, right: 100, bottom: 30, left: 50};
-const width = 1200 - margin.left - margin.right;
-const height = 600 - margin.top - margin.bottom;
+const width = 960 - margin.left - margin.right;
+const height = 500 - margin.top - margin.bottom;
 
 // Create the SVG container
 const svg = d3.select("#visualization")
@@ -25,164 +25,127 @@ d3.json("processed_data.json").then(function(response) {
     let features = Object.keys(data[0].features);
     
     // Create scales for each feature
-    const scales = {};
+    const y = {};
     features.forEach(feature => {
-        scales[feature] = d3.scaleLinear()
+        y[feature] = d3.scaleLinear()
             .domain([0, 1])
             .range([height, 0]);
     });
 
     // Create position scale for axes
-    let xScale = d3.scalePoint()
-        .domain(features)
-        .range([0, width]);
+    const x = d3.scalePoint()
+        .range([0, width])
+        .padding(1)
+        .domain(features);
 
-    // Function to render the parallel coordinates
-    function render(features) {
-        // Update position scale
-        xScale.domain(features);
-
-        // Create the parallel coordinates line generator
-        const line = d3.line()
-            .defined(([, value]) => value != null)
-            .x(([key]) => xScale(key))
-            .y(([, value]) => scales[key](value));
-
-        // Update axes
-        const axes = svg.selectAll(".axis")
-            .data(features, d => d);
-
-        // Remove old axes
-        axes.exit().remove();
-
-        // Add new axes
-        const axesEnter = axes.enter()
-            .append("g")
-            .attr("class", "axis")
-            .call(drag);
-
-        // Update all axes
-        axes.merge(axesEnter)
-            .attr("transform", d => `translate(${xScale(d)},0)`)
-            .each(function(d) {
-                d3.select(this).call(d3.axisLeft(scales[d]));
-            });
-
-        // Add axes labels
-        axesEnter.append("text")
-            .attr("y", -9)
-            .attr("text-anchor", "middle")
-            .style("font-size", "10px")
-            .text(d => `${d}\n[${featureRanges[d].min.toFixed(2)}-${featureRanges[d].max.toFixed(2)}]`);
-
-        // Update lines
-        const paths = svg.selectAll(".line")
-            .data(data);
-
-        // Add new lines
-        const pathsEnter = paths.enter()
-            .append("path")
-            .attr("class", "line")
-            .style("stroke", d => colorScale(d.popularity))
-            .style("opacity", 0.3);
-
-        // Update all lines
-        paths.merge(pathsEnter)
-            .attr("d", d => line(features.map(key => [key, d.features[key]])));
-
-        // Add brushes
-        const brushes = {};
-        features.forEach(feature => {
-            const brush = d3.brushY()
-                .extent([[xScale(feature) - 10, 0], [xScale(feature) + 10, height]])
-                .on("start brush end", brushed);
-
-            const axisGroup = svg.select(`.axis:nth-child(${features.indexOf(feature) + 1})`);
-            axisGroup.call(brush);
-            brushes[feature] = brush;
-        });
-
-        // Add tooltips
-        paths.merge(pathsEnter)
-            .on("mouseover", function(event, d) {
-                d3.select(this)
-                    .style("stroke-width", 2)
-                    .style("opacity", 1)
-                    .raise();
-
-                const tooltip = d3.select("body")
-                    .append("div")
-                    .attr("class", "tooltip");
-
-                tooltip.html(`
-                    <strong>${d.track_name}</strong><br>
-                    Artist: ${d.artists}<br>
-                    Popularity: ${d.popularity}<br>
-                    Hit Count: ${d.hit_count}<br>
-                    ${Object.entries(d.features)
-                        .map(([key, value]) => `${key}: ${value.toFixed(3)}`)
-                        .join("<br>")}
-                `)
-                .style("left", (event.pageX + 10) + "px")
-                .style("top", (event.pageY - 28) + "px");
-            })
-            .on("mouseout", function() {
-                d3.select(this)
-                    .style("stroke-width", 1)
-                    .style("opacity", 0.3);
-                d3.selectAll(".tooltip").remove();
-            });
-
-        // Brushing function
-        function brushed(event) {
-            if (event.selection === null) return;
-            const feature = features[d3.select(this).datum()];
-            const [y0, y1] = event.selection;
-
-            svg.selectAll(".line")
-                .style("opacity", d => {
-                    const value = scales[feature](d.features[feature]);
-                    return value >= y0 && value <= y1 ? 0.7 : 0.1;
-                });
-        }
+    function path(d) {
+        return d3.line()(features.map(feature => [x(feature), y[feature](d.features[feature])]));
     }
 
-    // Drag behavior for axes
-    const drag = d3.drag()
-        .subject(function() {
-            const t = d3.select(this);
-            return {
-                x: t.attr("transform").match(/translate\(([^,]+)/)[1]
-            };
+    // Add the lines
+    svg.append("g")
+        .attr("fill", "none")
+        .attr("stroke-width", 1.5)
+        .attr("stroke-opacity", 0.4)
+      .selectAll("path")
+      .data(data)
+      .join("path")
+        .attr("stroke", d => colorScale(d.popularity))
+        .attr("d", path)
+        .attr("class", "line");
+
+    // Add a group element for each dimension.
+    const g = svg.selectAll(".dimension")
+        .data(features)
+        .enter().append("g")
+        .attr("class", "dimension")
+        .attr("transform", d => `translate(${x(d)})`)
+        .call(d3.drag()
+            .on("start", function(event) {
+                d3.select(this).raise().classed("active", true);
+            })
+            .on("drag", function(event, d) {
+                const xPos = event.x;
+                const domain = features.slice();
+                const i = d3.bisectLeft(domain.map(key => x(key)), xPos);
+                if (i > 0 && i < domain.length) {
+                    const oldIndex = domain.indexOf(d);
+                    const newIndex = i > oldIndex ? i - 1 : i;
+                    domain.splice(oldIndex, 1);
+                    domain.splice(newIndex, 0, d);
+                    x.domain(domain);
+                    g.attr("transform", d => `translate(${x(d)})`);
+                    svg.selectAll(".line").attr("d", path);
+                }
+            })
+            .on("end", function() {
+                d3.select(this).classed("active", false);
+            }));
+
+    // Add an axis and title.
+    g.append("g")
+        .attr("class", "axis")
+        .each(function(d) { 
+            d3.select(this).call(d3.axisLeft(y[d])); 
         })
-        .on("start", function(event) {
-            d3.select(this).raise().classed("active", true);
-        })
-        .on("drag", function(event, d) {
-            // Get the current position
-            const xPos = event.x;
-            
-            // Find the closest position in the domain
-            const domain = features.slice();
-            const range = domain.map(key => xScale(key));
-            const i = d3.bisectLeft(range, xPos);
-            
-            if (i > 0 && i < domain.length) {
-                // Swap the positions
-                const oldIndex = domain.indexOf(d);
-                const newIndex = i > oldIndex ? i - 1 : i;
-                domain.splice(oldIndex, 1);
-                domain.splice(newIndex, 0, d);
-                features = domain;
-                render(features);
-            }
-        })
-        .on("end", function() {
-            d3.select(this).classed("active", false);
+        .append("text")
+        .style("text-anchor", "middle")
+        .attr("y", -9)
+        .text(d => d)
+        .style("fill", "black");
+
+    // Add and store a brush for each axis.
+    g.append("g")
+        .attr("class", "brush")
+        .each(function(d) {
+            d3.select(this).call(d3.brushY()
+                .extent([[-8, 0], [8, height]])
+                .on("brush", brushed)
+                .on("end", brushed));
         });
 
-    // Initial render
-    render(features);
+    function brushed(event) {
+        if (event.selection === null) return;
+        const dimension = this.parentNode.__data__;
+        const [y0, y1] = event.selection;
+        
+        svg.selectAll(".line")
+            .style("stroke-opacity", d => {
+                const value = y[dimension](d.features[dimension]);
+                return value >= y0 && value <= y1 ? 0.7 : 0.1;
+            });
+    }
+
+    // Add tooltips
+    svg.selectAll(".line")
+        .on("mouseover", function(event, d) {
+            d3.select(this)
+                .style("stroke-width", 2)
+                .style("stroke-opacity", 1)
+                .raise();
+
+            const tooltip = d3.select("body")
+                .append("div")
+                .attr("class", "tooltip");
+
+            tooltip.html(`
+                <strong>${d.track_name}</strong><br>
+                Artist: ${d.artists}<br>
+                Popularity: ${d.popularity}<br>
+                Hit Count: ${d.hit_count}<br>
+                ${Object.entries(d.features)
+                    .map(([key, value]) => `${key}: ${value.toFixed(3)}`)
+                    .join("<br>")}
+            `)
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 28) + "px");
+        })
+        .on("mouseout", function() {
+            d3.select(this)
+                .style("stroke-width", 1.5)
+                .style("stroke-opacity", 0.4);
+            d3.selectAll(".tooltip").remove();
+        });
 
     // Add color legend
     const legendWidth = 20;
